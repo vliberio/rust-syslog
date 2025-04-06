@@ -54,6 +54,7 @@
 extern crate log;
 extern crate time;
 
+#[cfg(feature = "os")]
 use std::env;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
@@ -62,6 +63,7 @@ use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::os::unix::net::{UnixDatagram, UnixStream};
 #[cfg(all(unix, feature = "os"))]
 use std::path::Path;
+#[cfg(feature = "os")]
 use std::process;
 use std::sync::{Arc, Mutex};
 
@@ -513,6 +515,7 @@ pub fn init(
     Ok(())
 }
 
+#[cfg(feature = "os")]
 fn get_process_info() -> Result<(String, u32)> {
     env::current_exe()
         .map_err(|e| Error::Initialization(Box::new(e)))
@@ -523,6 +526,11 @@ fn get_process_info() -> Result<(String, u32)> {
                 .ok_or_else(|| Error::Initialization("process name not found".into()))
         })
         .map(|name| (name, process::id()))
+}
+
+#[cfg(not(feature = "os"))]
+fn get_process_info() -> Result<(String, u32)> {
+    Ok(("none".to_string(), 0))
 }
 
 #[cfg(feature = "os")]
