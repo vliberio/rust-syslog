@@ -3,6 +3,7 @@ pub enum Error {
     Initialization(Box<dyn std::error::Error + Send + Sync>),
     Write(::std::io::Error),
     Io(::std::io::Error),
+    UnsupportedPlatform,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -13,6 +14,7 @@ impl std::error::Error for Error {
             Error::Initialization(ref err) => Some(&**err),
             Error::Write(_) => None,
             Error::Io(ref err) => Some(err),
+            Error::UnsupportedPlatform => None,
         }
     }
 }
@@ -23,6 +25,7 @@ impl std::fmt::Display for Error {
             Error::Initialization(ref err) => write!(f, "Initialization error: {}", err),
             Error::Write(ref err) => write!(f, "Write error: {}", err),
             Error::Io(ref err) => write!(f, "Io error: {}", err),
+            Error::UnsupportedPlatform => write!(f, "Unsupported platform"),
         }
     }
 }

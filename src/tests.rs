@@ -1,6 +1,7 @@
 use io::Read;
 use std::{collections::BTreeMap, sync::Barrier};
 
+#[cfg(feature = "os")]
 #[test]
 fn test_unix_socket() {
     use super::*;

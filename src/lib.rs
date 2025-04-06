@@ -58,8 +58,9 @@ use std::env;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-#[cfg(unix)]
+#[cfg(all(unix, feature = "os"))]
 use std::os::unix::net::{UnixDatagram, UnixStream};
+#[cfg(all(unix, feature = "os"))]
 use std::path::Path;
 use std::process;
 use std::sync::{Arc, Mutex};
@@ -79,6 +80,7 @@ pub use format::{Formatter3164, Formatter5424, LogFormat};
 
 pub type Priority = u8;
 
+#[cfg(all(unix, feature = "os"))]
 const UNIX_SOCK_PATHS: [&str; 3] = ["/dev/log", "/var/run/syslog", "/var/run/log"];
 
 /// Main logging structure
@@ -151,11 +153,11 @@ impl<W: Write, F> Logger<W, F> {
 
 pub enum LoggerBackend {
     /// Unix socket, temp file path, log file path
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "os"))]
     Unix(UnixDatagram),
     #[cfg(not(unix))]
     Unix(()),
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "os"))]
     UnixStream(BufWriter<UnixStream>),
     #[cfg(not(unix))]
     UnixStream(()),
@@ -167,9 +169,9 @@ impl Write for LoggerBackend {
     /// Sends a message directly, without any formatting
     fn write(&mut self, message: &[u8]) -> io::Result<usize> {
         match *self {
-            #[cfg(unix)]
+            #[cfg(all(unix, feature = "os"))]
             LoggerBackend::Unix(ref dgram) => dgram.send(message),
-            #[cfg(unix)]
+            #[cfg(all(unix, feature = "os"))]
             LoggerBackend::UnixStream(ref mut socket) => {
                 let null = [0; 1];
                 socket
@@ -190,12 +192,12 @@ impl Write for LoggerBackend {
 
     fn write_fmt(&mut self, args: Arguments) -> io::Result<()> {
         match *self {
-            #[cfg(unix)]
+            #[cfg(all(unix, feature = "os"))]
             LoggerBackend::Unix(ref dgram) => {
                 let message = fmt::format(args);
                 dgram.send(message.as_bytes()).map(|_| ())
             }
-            #[cfg(unix)]
+            #[cfg(all(unix, feature = "os"))]
             LoggerBackend::UnixStream(ref mut socket) => {
                 let null = [0; 1];
                 socket
@@ -219,9 +221,9 @@ impl Write for LoggerBackend {
 
     fn flush(&mut self) -> io::Result<()> {
         match *self {
-            #[cfg(unix)]
+            #[cfg(all(unix, feature = "os"))]
             LoggerBackend::Unix(_) => Ok(()),
-            #[cfg(unix)]
+            #[cfg(all(unix, feature = "os"))]
             LoggerBackend::UnixStream(ref mut socket) => socket.flush(),
             LoggerBackend::Udp(_, _) => Ok(()),
             LoggerBackend::Tcp(ref mut socket) => socket.flush(),
@@ -234,7 +236,7 @@ impl Write for LoggerBackend {
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-#[cfg(unix)]
+#[cfg(all(unix, feature = "os"))]
 pub fn unix<F: Clone>(formatter: F) -> Result<Logger<LoggerBackend, F>> {
     UNIX_SOCK_PATHS
         .iter()
@@ -265,7 +267,7 @@ pub fn unix<F: Clone>(_formatter: F) -> Result<Logger<LoggerBackend, F>> {
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
-#[cfg(unix)]
+#[cfg(all(unix, feature = "os"))]
 pub fn unix_custom<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<LoggerBackend, F>> {
     unix_connect(formatter, path).map_err(|e| Error::Initialization(Box::new(e)))
 }
@@ -275,7 +277,7 @@ pub fn unix_custom<P: AsRef<Path>, F>(_formatter: F, _path: P) -> Result<Logger<
     Err(ErrorKind::UnsupportedPlatform)?
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "os"))]
 fn unix_connect<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<LoggerBackend, F>> {
     let sock = UnixDatagram::unbound()?;
     match sock.connect(&path) {
@@ -367,7 +369,7 @@ impl Log for BasicLogger {
 }
 
 /// Unix socket Logger init function compatible with log crate
-#[cfg(unix)]
+#[cfg(all(unix, feature = "os"))]
 pub fn init_unix(facility: Facility, log_level: log::LevelFilter) -> Result<()> {
     let (process, pid) = get_process_info()?;
     let formatter = Formatter3164 {
@@ -391,7 +393,7 @@ pub fn init_unix(_facility: Facility, _log_level: log::LevelFilter) -> Result<()
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
-#[cfg(unix)]
+#[cfg(all(unix, feature = "os"))]
 pub fn init_unix_custom<P: AsRef<Path>>(
     facility: Facility,
     log_level: log::LevelFilter,
@@ -496,17 +498,13 @@ pub fn init(
         pid,
     };
 
-    let backend = if let Ok(logger) = unix(formatter.clone()) {
-        logger.backend
+    let backend = if let Ok(tcp_stream) = TcpStream::connect(("127.0.0.1", 601)) {
+        LoggerBackend::Tcp(BufWriter::new(tcp_stream))
     } else {
         formatter.hostname = get_hostname().ok();
-        if let Ok(tcp_stream) = TcpStream::connect(("127.0.0.1", 601)) {
-            LoggerBackend::Tcp(BufWriter::new(tcp_stream))
-        } else {
-            let udp_addr = "127.0.0.1:514".parse().unwrap();
-            let udp_stream = UdpSocket::bind(("127.0.0.1", 0))?;
-            LoggerBackend::Udp(udp_stream, udp_addr)
-        }
+        let udp_addr = "127.0.0.1:514".parse().unwrap();
+        let udp_stream = UdpSocket::bind(("127.0.0.1", 0))?;
+        LoggerBackend::Udp(udp_stream, udp_addr)
     };
     log::set_boxed_logger(Box::new(BasicLogger::new(Logger { formatter, backend })))
         .map_err(|e| Error::Initialization(Box::new(e)))?;
@@ -527,6 +525,12 @@ fn get_process_info() -> Result<(String, u32)> {
         .map(|name| (name, process::id()))
 }
 
+#[cfg(feature = "os")]
 fn get_hostname() -> Result<String> {
     Ok(hostname::get()?.to_string_lossy().to_string())
+}
+
+#[cfg(not(feature = "os"))]
+fn get_hostname() -> Result<String> {
+    Ok("localhost".to_string())
 }

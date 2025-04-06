@@ -241,14 +241,14 @@ fn encode_priority(severity: Severity, facility: Facility) -> Priority {
     facility as u8 | severity as u8
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "os"))]
 // On unix platforms, time::OffsetDateTime::now_local always returns an error so use UTC instead
 // https://github.com/time-rs/time/issues/380
 fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
     Ok(time::OffsetDateTime::now_utc())
 }
 
-#[cfg(not(unix))]
+#[cfg(not(all(unix, feature = "os")))]
 fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
     time::OffsetDateTime::now_local()
 }
